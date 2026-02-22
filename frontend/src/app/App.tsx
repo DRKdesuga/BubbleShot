@@ -1,37 +1,54 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { ParticleBackground } from "./components/ParticleBackground";
 import { HeroHeader } from "./components/HeroHeader";
 import { InputBar } from "./components/InputBar";
 import { OrbitalWordCloud, WordEntry } from "./components/OrbitalWordCloud";
+import { Leaderboard } from "./components/Leaderboard";
+import logoImg from "../images/mind7_png_logo.png";
 
 // Initial demo data to showcase the visualization
 const INITIAL_WORDS: WordEntry[] = [
-  { word: "kubernetes", count: 5 },
-  { word: "terraform", count: 4 },
-  { word: "docker", count: 6 },
-  { word: "cloud", count: 7 },
-  { word: "hybrid", count: 4 },
-  { word: "devops", count: 3 },
-  { word: "api", count: 5 },
-  { word: "microservice", count: 2 },
-  { word: "pipeline", count: 3 },
-  { word: "infrastructure", count: 2 },
-  { word: "network", count: 3 },
-  { word: "secure", count: 2 },
+  { word: "ARCL", hp: 25 },
+  { word: "Mathis", hp: 5 },
+  { word: "Hugo", hp: 5 },
+  { word: "Hamza", hp: 5 },
+  { word: "Elyes", hp: 5 },
+  { word: "Leandro", hp: 5 },
+  { word: "Henri-Gabriel", hp: 5 },
 ];
 
 export default function App() {
   const [words, setWords] = useState<WordEntry[]>(INITIAL_WORDS);
+  const leaderboardRef = useRef<HTMLDivElement>(null);
 
   const handleAddWord = useCallback((word: string) => {
+    if (word === "clearhugo") {
+      setWords([]);
+      return;
+    }
     setWords((prev) => {
       const existing = prev.find((w) => w.word === word);
       if (existing) {
+        const newHp = Math.min(existing.hp + 5, 25);
         return prev.map((w) =>
-          w.word === word ? { ...w, count: w.count + 1 } : w
+          w.word === word ? { ...w, hp: newHp } : w
         );
       }
-      return [...prev, { word, count: 1 }];
+      return [...prev, { word, hp: 5 }];
+    });
+  }, []);
+
+  const handleBubbleClick = useCallback((word: string) => {
+    setWords((prev) => {
+      const entry = prev.find((w) => w.word === word);
+      if (!entry) return prev;
+      if (entry.hp <= 1) {
+        // 💥 Bulle éclatée !
+        return prev.filter((w) => w.word !== word);
+      }
+      return prev.map((w) =>
+        w.word === word ? { ...w, hp: w.hp - 1 } : w
+      );
     });
   }, []);
 
@@ -69,38 +86,61 @@ export default function App() {
         }}
       />
 
-      <HeroHeader />
-      <InputBar onSubmit={handleAddWord} />
+      {/* Leaderboard top-left */}
+        <div ref={leaderboardRef} className="absolute top-4 left-4 z-40 p-0">
+          <Leaderboard words={words} />
+        </div>
 
-      {/* Status bar */}
-      <div className="relative z-10 flex justify-center px-6 pb-2">
-        <div
-          className="flex items-center gap-4"
-          style={{
-            fontFamily: "'Inter', sans-serif",
-            fontSize: "0.7rem",
-            fontWeight: 400,
-            color: "rgba(154,107,255,0.4)",
-            letterSpacing: "0.05em",
-          }}
-        >
-          <span>
-            <span style={{ color: "rgba(125,249,255,0.5)" }}>
-              {words.length}
-            </span>{" "}
-            unique words
-          </span>
-          <span style={{ color: "rgba(108,59,255,0.2)" }}>|</span>
-          <span>
-            <span style={{ color: "rgba(125,249,255,0.5)" }}>
-              {words.reduce((sum, w) => sum + w.count, 0)}
-            </span>{" "}
-            total entries
-          </span>
+        {/* Team logo top-right */}
+        <div className="absolute top-5 right-5 z-40 p-0">
+          <img
+            src={logoImg}
+            alt="Mind7 Logo"
+            style={{
+              width: "100px",
+              height: "100px",
+              objectFit: "contain",
+              opacity: 1,
+              filter: "drop-shadow(0 0 10px rgba(108,59,255,0.4))",
+            }}
+          />
+        </div>
+
+      <HeroHeader />
+
+      {/* Game area: fills everything below the header */}
+      <div className="relative z-10 flex-1 flex flex-col min-h-0">
+        {/* Bubble cloud takes all available space */}
+        <OrbitalWordCloud words={words} onBubbleClick={handleBubbleClick} excludeRef={leaderboardRef} />
+
+        
+
+        {/* Input + status pinned at the bottom, overlaying the cloud */}
+        <div className="absolute bottom-0 left-0 right-0 z-30 pb-10">
+          {/* Status bar */}
+          <div className="flex justify-center px-6 pb-2">
+            <div
+              className="flex items-center gap-4"
+              style={{
+                fontFamily: "'Inter', sans-serif",
+                fontSize: "0.7rem",
+                fontWeight: 400,
+                color: "rgba(154,107,255,0.4)",
+                letterSpacing: "0.05em",
+              }}
+            >
+              <span>
+                <span style={{ color: "rgba(125,249,255,0.5)" }}>
+                  {words.length}
+                </span>{" "}
+                unique words
+              </span>
+            </div>
+          </div>
+
+          <InputBar onSubmit={handleAddWord} />
         </div>
       </div>
-
-      <OrbitalWordCloud words={words} />
 
       {/* Bottom gradient fade */}
       <div

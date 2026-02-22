@@ -2,7 +2,7 @@ import { Cloud, ArrowRightLeft, Database } from "lucide-react";
 
 export function HeroHeader() {
   return (
-    <header className="relative z-10 pt-12 pb-6 px-6 text-center">
+    <header className="relative z-10 pt-6 pb-3 px-6 text-center">
       {/* Glow behind title */}
       <div
         className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[200px] rounded-full pointer-events-none"
@@ -37,15 +37,6 @@ export function HeroHeader() {
       >
         Hybrid Cloud Word Visualization
       </p>
-
-      {/* Architecture flow indicator */}
-      <div className="flex items-center justify-center gap-3 mt-6 relative">
-        <FlowChip icon={<Cloud size={14} />} label="Public Cloud" />
-        <ArrowRightLeft size={14} style={{ color: "rgba(108,59,255,0.5)" }} />
-        <FlowChip icon={<ArrowRightLeft size={14} />} label="Private API" />
-        <ArrowRightLeft size={14} style={{ color: "rgba(108,59,255,0.5)" }} />
-        <FlowChip icon={<Database size={14} />} label="Private DB" />
-      </div>
     </header>
   );
 }

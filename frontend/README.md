@@ -1,7 +1,7 @@
 
-  # Hybrid Guestbook UI Design
+  # Hybrid Guestbook UI Design (copie)
 
-  This is a code bundle for Hybrid Guestbook UI Design. The original project is available at https://www.figma.com/design/N5FZgqmO1zeVzIfkR1D3hu/Hybrid-Guestbook-UI-Design.
+  This is a code bundle for Hybrid Guestbook UI Design (copie). The original project is available at https://www.figma.com/design/tvPvjqQbCOk58yi0X8tdAm/Hybrid-Guestbook-UI-Design--copie-.
 
   ## Running the code
 
