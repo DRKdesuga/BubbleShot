@@ -121,7 +121,7 @@ Et c'est live. 🎉
 ├── frontend/         # Interface React
 │   ├── src/
 │   └── ...
-├── backend/          # Serveur Node.js
+├── backend/          # Serveur Node.js // Java
 │   ├── index.js
 │   └── ...
 ├── docker-compose.yml
