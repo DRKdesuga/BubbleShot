@@ -2,7 +2,7 @@
 
 Backend temps réel (WebSocket) + un endpoint REST (`POST /clearAll`) + persistance **PostgreSQL**.
 
-## 🎯 Objectif
+## 🎯 Objectifs
 Séparer **API / cas d’usage / règles métier / technique** pour éviter un `index.js` monolithique et garder un code testable.
 
 ---
