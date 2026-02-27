@@ -89,3 +89,36 @@ Le switch est géré **uniquement** dans `infrastructure/db/` via `connectionMan
 Point d’entrée : wiring (instancie repo, use cases, ws/http)
 
 - `src/main.ts`
+
+---
+
+## ✅ Scope actuel (in-memory, sans DB)
+
+Le backend est actuellement orienté validation locale multi-clients via WebSocket, avec stockage en mémoire.
+
+### HTTP
+- `GET /health` -> `{ "status": "ok" }`
+
+### WebSocket
+Events entrants :
+- `addWord` payload `{ word: string }`
+- `hitWord` payload `{ word: string }`
+- `leaderboard` (optionnellement avec ack)
+
+Events sortants :
+- `state` -> `Array<{ word: string; hp: number }>`
+- `leaderboard` -> `Array<{ word: string; hp: number }>`
+- `error` -> `{ code: string; message: string }`
+
+### Règles métier
+- Nouveau mot: `5 HP`
+- Mot existant: `+5 HP` (cap `25`)
+- Hit: `-1 HP`
+- `HP <= 0`: bulle supprimée
+
+### Run
+```bash
+npm install
+npm run dev
+npm test
+```
