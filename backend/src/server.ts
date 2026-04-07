@@ -7,21 +7,25 @@ import { AddWordUseCase } from "./application/usecases/addWord.js";
 import { GetLeaderboardUseCase } from "./application/usecases/getLeaderboard.js";
 import { HitWordUseCase } from "./application/usecases/hitWord.js";
 import { SocketIoBroadcaster } from "./infrastructure/realtime/socketIoBroadcaster.js";
-import { InMemoryBubbleRepository } from "./infrastructure/repositories/inMemoryBubbleRepository.js";
+import { DatabaseConnectionManager } from "./infrastructure/db/connectionManager.js";
+import { BubbleRepositoryPostgres } from "./infrastructure/repositories/bubbleRepositoryPostgres.js";
 import { buildHttpRoutes } from "./presentation/http/routes.js";
 import { registerWsGateway } from "./presentation/ws/wsGateway.js";
+
+import { BubbleRepository } from "./infrastructure/repositories/bubbleRepository.js";
 
 export interface AppServer {
   app: express.Express;
   httpServer: HttpServer;
   io: SocketIOServer;
+  repo: BubbleRepository;
 }
 
 export interface ServerConfig {
   corsOrigin: string;
 }
 
-export function createAppServer(config?: Partial<ServerConfig>): AppServer {
+export async function createAppServer(config?: Partial<ServerConfig>): Promise<AppServer> {
   const corsOrigin =
     config?.corsOrigin ?? process.env.CORS_ORIGIN ?? "http://localhost:5173";
 
@@ -38,7 +42,10 @@ export function createAppServer(config?: Partial<ServerConfig>): AppServer {
     },
   });
 
-  const repo = new InMemoryBubbleRepository();
+  const dbConnectionManager = new DatabaseConnectionManager();
+  const repo = new BubbleRepositoryPostgres(dbConnectionManager);
+  await repo.initialize();
+
   const broadcaster = new SocketIoBroadcaster(io);
 
   registerWsGateway(io, {
@@ -48,5 +55,5 @@ export function createAppServer(config?: Partial<ServerConfig>): AppServer {
     getLeaderboardUseCase: new GetLeaderboardUseCase(repo),
   });
 
-  return { app, httpServer, io };
+  return { app, httpServer, io, repo };
 }

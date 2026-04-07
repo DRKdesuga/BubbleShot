@@ -77,7 +77,8 @@ describe("wsGateway", () => {
   });
 
   it("broadcasts state updates to all clients", async () => {
-    const { httpServer, io } = createAppServer({ corsOrigin: "*" });
+    const { httpServer, io, repo } = await createAppServer({ corsOrigin: "*" });
+    await repo.clearAll();
 
     debug("starting HTTP server");
     await startServer(httpServer);
@@ -90,6 +91,11 @@ describe("wsGateway", () => {
       const [a, b] = await Promise.all([connectClient(url), connectClient(url)]);
       clients.push(a, b);
       debug("both clients connected");
+
+      await Promise.all([
+        waitForEvent(a, "state"),
+        waitForEvent(b, "state"),
+      ]);
 
       const bStatePromise = waitForEvent<Array<{ word: string; hp: number }>>(b, "state");
       const ack = await new Promise<{ ok: boolean }>((resolve) => {
