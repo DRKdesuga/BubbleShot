@@ -28,8 +28,10 @@ function waitForEvent<T>(socket: ClientSocket, event: string): Promise<T> {
 function connectClient(url: string): Promise<ClientSocket> {
   return new Promise<ClientSocket>((resolve, reject) => {
     const socket = ioClient(url, {
+      path: "/api/socket.io",
       autoConnect: false,
       reconnection: false,
+      transports: ["websocket"],
     });
 
     const timer = setTimeout(() => {
