@@ -1,8 +1,11 @@
 import { Router } from "express";
-import { healthHandler } from "./controllers/health";
+import { AdminController } from "./controllers/adminController.js";
 
-const router = Router();
+export function buildHttpRoutes(): Router {
+  const router = Router();
+  const adminController = new AdminController();
 
-router.get("/health", healthHandler);
+  router.get("/health", adminController.health.bind(adminController));
 
-export default router;
+  return router;
+}

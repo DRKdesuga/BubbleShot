@@ -1,4 +1,5 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
+import { io, type Socket } from "socket.io-client";
 import { ParticleBackground } from "./components/ParticleBackground";
 import { HeroHeader } from "./components/HeroHeader";
 import { InputBar } from "./components/InputBar";
@@ -6,50 +7,92 @@ import { OrbitalWordCloud, WordEntry } from "./components/OrbitalWordCloud";
 import { Leaderboard } from "./components/Leaderboard";
 import logoImg from "../images/mind7_png_logo.png";
 
-// Initial demo data to showcase the visualization
-const INITIAL_WORDS: WordEntry[] = [
-  { word: "ARCL", hp: 25 },
-  { word: "Mathis", hp: 5 },
-  { word: "Hugo", hp: 5 },
-  { word: "Hamza", hp: 5 },
-  { word: "Elyes", hp: 5 },
-  { word: "Leandro", hp: 5 },
-  { word: "Henri-Gabriel", hp: 5 },
-];
+// Backend URL is optionally injected via Vite for dev, otherwise we rely on relative paths (Nginx proxy)
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
+function isWordEntryArray(value: unknown): value is WordEntry[] {
+  if (!Array.isArray(value)) {
+    return false;
+  }
+
+  return value.every(
+    (entry) =>
+      typeof entry === "object" &&
+      entry !== null &&
+      "word" in entry &&
+      "hp" in entry &&
+      typeof (entry as { word: unknown }).word === "string" &&
+      typeof (entry as { hp: unknown }).hp === "number"
+  );
+}
 
 export default function App() {
-  const [words, setWords] = useState<WordEntry[]>(INITIAL_WORDS);
+  const [words, setWords] = useState<WordEntry[]>([]);
+  const [isConnected, setIsConnected] = useState(false);
   const leaderboardRef = useRef<HTMLDivElement>(null);
+  const socketRef = useRef<Socket | null>(null);
+
+  useEffect(() => {
+    const socket = io(BACKEND_URL || undefined, {
+      path: "/api/socket.io",
+      transports: ["websocket"],
+    });
+
+    socketRef.current = socket;
+
+    socket.on("connect", () => {
+      setIsConnected(true);
+    });
+
+    socket.on("disconnect", () => {
+      setIsConnected(false);
+    });
+
+    socket.on("state", (payload: unknown) => {
+      if (isWordEntryArray(payload)) {
+        setWords(payload);
+      }
+    });
+
+    socket.on("error", (payload: unknown) => {
+      console.error("Backend error:", payload);
+    });
+
+    return () => {
+      socket.disconnect();
+      socketRef.current = null;
+    };
+  }, []);
 
   const handleAddWord = useCallback((word: string) => {
-    if (word === "clearhugo") {
-      setWords([]);
+    if (!socketRef.current) {
       return;
     }
-    setWords((prev) => {
-      const existing = prev.find((w) => w.word === word);
-      if (existing) {
-        const newHp = Math.min(existing.hp + 5, 25);
-        return prev.map((w) =>
-          w.word === word ? { ...w, hp: newHp } : w
-        );
+
+    socketRef.current.emit(
+      "addWord",
+      { word },
+      (ack: { ok: boolean; message?: string }) => {
+        if (!ack?.ok) {
+          console.error("addWord failed:", ack?.message ?? "Unknown error");
+        }
       }
-      return [...prev, { word, hp: 5 }];
-    });
+    );
   }, []);
 
   const handleBubbleClick = useCallback((word: string) => {
-    setWords((prev) => {
-      const entry = prev.find((w) => w.word === word);
-      if (!entry) return prev;
-      if (entry.hp <= 1) {
-        // 💥 Bulle éclatée !
-        return prev.filter((w) => w.word !== word);
+    if (!socketRef.current) {
+      return;
+    }
+
+    socketRef.current.emit(
+      "hitWord",
+      { word },
+      (ack: { ok: boolean; message?: string }) => {
+        if (!ack?.ok) {
+          console.error("hitWord failed:", ack?.message ?? "Unknown error");
+        }
       }
-      return prev.map((w) =>
-        w.word === word ? { ...w, hp: w.hp - 1 } : w
-      );
-    });
+    );
   }, []);
 
   return (
@@ -134,6 +177,13 @@ export default function App() {
                   {words.length}
                 </span>{" "}
                 unique words
+              </span>
+              <span
+                style={{
+                  color: isConnected ? "rgba(125,249,255,0.6)" : "rgba(255,120,120,0.6)",
+                }}
+              >
+                {isConnected ? "connected" : "offline"}
               </span>
             </div>
           </div>
