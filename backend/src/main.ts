@@ -1,11 +1,13 @@
 import { createAppServer } from "./server.js";
 
-const port = Number(process.env.PORT ?? 3000);
+const port = Number(process.env.NEXT_PORT || process.env.PORT || 3000);
+
+const host = process.env.HOST || "127.0.0.1";
 
 createAppServer()
   .then(({ httpServer }) => {
-    httpServer.listen(port, () => {
-      console.log(`Backend listening on http://localhost:${port}`);
+    httpServer.listen(port, host, () => {
+      console.log(`Backend listening on http://${host}:${port}`);
     });
 
     function shutdown(signal: string): void {

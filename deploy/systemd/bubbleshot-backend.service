@@ -1,0 +1,15 @@
+[Unit]
+Description=BubbleShot backend (Express + Socket.IO)
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+WorkingDirectory=/opt/bubbleshot/backend
+EnvironmentFile=/etc/bubbleshot/.env
+ExecStart=/usr/bin/node dist/main.js
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

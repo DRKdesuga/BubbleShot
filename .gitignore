@@ -80,3 +80,13 @@ logs/
 *.pem
 *.key
 *.crt
+
+# =========================
+# Local Testing & Deployment
+# =========================
+# Configs for local Nginx test on Mac
+**/nginx/bubbleshot-local.conf
+**/.env.azure-test
+
+# Config backups (created by sed -i.bak)
+*.bak

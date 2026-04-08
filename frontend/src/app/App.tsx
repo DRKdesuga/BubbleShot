@@ -7,8 +7,8 @@ import { OrbitalWordCloud, WordEntry } from "./components/OrbitalWordCloud";
 import { Leaderboard } from "./components/Leaderboard";
 import logoImg from "../images/mind7_png_logo.png";
 
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL ?? "http://localhost:3000";
-
+// Backend URL is optionally injected via Vite for dev, otherwise we rely on relative paths (Nginx proxy)
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
 function isWordEntryArray(value: unknown): value is WordEntry[] {
   if (!Array.isArray(value)) {
     return false;
@@ -32,7 +32,8 @@ export default function App() {
   const socketRef = useRef<Socket | null>(null);
 
   useEffect(() => {
-    const socket = io(BACKEND_URL, {
+    const socket = io(BACKEND_URL || undefined, {
+      path: "/api/socket.io",
       transports: ["websocket"],
     });
 

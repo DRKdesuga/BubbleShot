@@ -32,10 +32,11 @@ export async function createAppServer(config?: Partial<ServerConfig>): Promise<A
   const app = express();
   app.use(cors({ origin: corsOrigin }));
   app.use(express.json());
-  app.use(buildHttpRoutes());
+  app.use("/api", buildHttpRoutes());
 
   const httpServer = createServer(app);
   const io = new SocketIOServer(httpServer, {
+    path: "/api/socket.io",
     cors: {
       origin: corsOrigin,
       methods: ["GET", "POST"],
