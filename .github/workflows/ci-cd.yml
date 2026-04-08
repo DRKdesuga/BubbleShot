@@ -1,80 +1,77 @@
-  name: Backend CI
-
-  on:
-    push:
-    pull_request:
-
-  jobs:
-    backend-ci:
-      runs-on: ubuntu-latest
-
-      defaults:
-        run:
-          working-directory: backend
-
-      services:
-        postgres-primary:
-          image: postgres:15
-          env:
-            POSTGRES_DB: bubbleshot_inst_2
-            POSTGRES_USER: bubbleshot
-            POSTGRES_PASSWORD: secret
-          ports:
-            - 5432:5432
-          options: >-
-            --health-cmd="pg_isready -U bubbleshot -d bubbleshot_inst_2"
-            --health-interval=10s
-            --health-timeout=5s
-            --health-retries=5
-
-        postgres-standby:
-          image: postgres:15
-          env:
-            POSTGRES_DB: bubbleshot_inst_2
-            POSTGRES_USER: bubbleshot
-            POSTGRES_PASSWORD: secret
-          ports:
-            - 5433:5432
-          options: >-
-            --health-cmd="pg_isready -U bubbleshot -d bubbleshot_inst_2"
-            --health-interval=10s
-            --health-timeout=5s
-            --health-retries=5
-
-      env:
-        INSTANCE_ID: inst-ci
-        DB_HOST_PRIMARY: 127.0.0.1
-        DB_HOST_STANDBY: 127.0.0.1
-        DB_PORT_PRIMARY: 5432
-        DB_PORT_STANDBY: 5433
-        DB_NAME: bubbleshot_inst_2
-        DB_USER: bubbleshot
-        DB_PASSWORD: secret
-        NEXT_PORT: 3000
-        CORS_ORIGIN: http://localhost:5173
-
-      steps:
-        - name: Checkout repository
-          uses: actions/checkout@v4
-
-        - name: Setup Node.js
-          uses: actions/setup-node@v4
-          with:
-            node-version: 22
-            cache: npm
-            cache-dependency-path: backend/package-lock.json
-
-        - name: Install backend dependencies
-          run: npm ci
-
-        - name: Build backend
-          run: npm run build
-
-        - name: Start backend
-          run: npm run start &
-
-        - name: Wait for backend healthcheck
-          run: npx wait-on http://127.0.0.1:3000/api/health
-
-        - name: Check health endpoint
-          run: curl --fail http://127.0.0.1:3000/api/health
+name: Backend CI
+on:
+  push:
+  pull_request:
+jobs:
+  backend-ci:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres-primary:
+        image: postgres:15
+        env:
+          POSTGRES_DB: bubbleshot_inst_2
+          POSTGRES_USER: bubbleshot
+          POSTGRES_PASSWORD: secret
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U bubbleshot -d bubbleshot_inst_2"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+      postgres-standby:
+        image: postgres:15
+        env:
+          POSTGRES_DB: bubbleshot_inst_2
+          POSTGRES_USER: bubbleshot
+          POSTGRES_PASSWORD: secret
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd="pg_isready -U bubbleshot -d bubbleshot_inst_2"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+    env:
+      INSTANCE_ID: inst-ci
+      DB_HOST_PRIMARY: 127.0.0.1
+      DB_HOST_STANDBY: 127.0.0.1
+      DB_PORT_PRIMARY: 5432
+      DB_PORT_STANDBY: 5433
+      DB_NAME: bubbleshot_inst_2
+      DB_USER: bubbleshot
+      DB_PASSWORD: secret
+      NEXT_PORT: 3000
+      CORS_ORIGIN: http://localhost:5173
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - name: Install backend dependencies
+        run: npm ci
+      - name: Build backend
+        run: npm run build
+      - name: Start backend and verify health
+        run: |
+          npm run start > /tmp/backend.log 2>&1 &
+          BACKEND_PID=$!
+          for i in {1..30}; do
+            if curl --silent --fail http://127.0.0.1:3000/api/health > /tmp/health.json; then
+              cat /tmp/health.json
+              kill $BACKEND_PID
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Backend failed to become healthy"
+          cat /tmp/backend.log
+          kill $BACKEND_PID || true
+          exit 1
