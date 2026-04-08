@@ -5,6 +5,7 @@ on:
 jobs:
   backend-ci:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: backend
@@ -59,19 +60,28 @@ jobs:
         run: npm ci
       - name: Build backend
         run: npm run build
+      - name: Run backend tests
+        run: npm test
       - name: Start backend and verify health
         run: |
           npm run start > /tmp/backend.log 2>&1 &
           BACKEND_PID=$!
           for i in {1..30}; do
-            if curl --silent --fail http://127.0.0.1:3000/api/health > /tmp/health.json; then
-              cat /tmp/health.json
+            if curl --silent --fail http://127.0.0.1:3000/api/health > /tmp/backend-health.json; then
+              cat /tmp/backend-health.json
               kill $BACKEND_PID
+              wait $BACKEND_PID || true
               exit 0
+            fi
+            if ! kill -0 $BACKEND_PID 2>/dev/null; then
+              echo "Backend process exited early"
+              cat /tmp/backend.log
+              exit 1
             fi
             sleep 2
           done
           echo "Backend failed to become healthy"
           cat /tmp/backend.log
           kill $BACKEND_PID || true
+          wait $BACKEND_PID || true
           exit 1
