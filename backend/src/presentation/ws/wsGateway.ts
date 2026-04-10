@@ -19,6 +19,36 @@ type Ack = (response: {
   data?: unknown;
 }) => void;
 
+function isDatabaseUnavailableError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return [
+    "Database connection failed for both primary and standby",
+    "ECONNREFUSED",
+    "ETIMEDOUT",
+    "EHOSTUNREACH",
+    "ENETUNREACH",
+    "ENOTFOUND",
+  ].some((pattern) => message.includes(pattern));
+}
+
+function toClientError(error: unknown): { code: string; message: string } {
+  if (error instanceof DomainError) {
+    return { code: error.code, message: error.message };
+  }
+
+  if (isDatabaseUnavailableError(error)) {
+    return {
+      code: "DB_UNAVAILABLE",
+      message: "Database unavailable (primary and standby unreachable).",
+    };
+  }
+
+  return {
+    code: "INTERNAL_ERROR",
+    message: "Unexpected server error.",
+  };
+}
+
 function parseWordPayload(payload: unknown): string {
   if (typeof payload === "string") {
     return payload;
@@ -37,15 +67,7 @@ function parseWordPayload(payload: unknown): string {
 }
 
 function emitError(socket: Socket, error: unknown): void {
-  if (error instanceof DomainError) {
-    socket.emit("error", { code: error.code, message: error.message });
-    return;
-  }
-
-  socket.emit("error", {
-    code: "INTERNAL_ERROR",
-    message: "Unexpected server error.",
-  });
+  socket.emit("error", toClientError(error));
 }
 
 export function registerWsGateway(io: Server, deps: GatewayDeps): void {
@@ -57,11 +79,8 @@ export function registerWsGateway(io: Server, deps: GatewayDeps): void {
         ack?.({ ok: true });
       } catch (error) {
         emitError(socket, error);
-        ack?.({
-          ok: false,
-          code: error instanceof DomainError ? error.code : "INTERNAL_ERROR",
-          message: error instanceof Error ? error.message : "Unexpected server error.",
-        });
+        const clientError = toClientError(error);
+        ack?.({ ok: false, ...clientError });
       }
     });
 
@@ -72,11 +91,8 @@ export function registerWsGateway(io: Server, deps: GatewayDeps): void {
         ack?.({ ok: true });
       } catch (error) {
         emitError(socket, error);
-        ack?.({
-          ok: false,
-          code: error instanceof DomainError ? error.code : "INTERNAL_ERROR",
-          message: error instanceof Error ? error.message : "Unexpected server error.",
-        });
+        const clientError = toClientError(error);
+        ack?.({ ok: false, ...clientError });
       }
     });
 

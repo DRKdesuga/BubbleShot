@@ -29,10 +29,32 @@ export async function createAppServer(config?: Partial<ServerConfig>): Promise<A
   const corsOrigin =
     config?.corsOrigin ?? process.env.CORS_ORIGIN ?? "http://localhost:5173";
 
+  const dbConnectionManager = new DatabaseConnectionManager();
+  const repo = new BubbleRepositoryPostgres(dbConnectionManager);
+  let dbIsAvailable = true;
+  let dbHealthMessage = "Database connection is healthy.";
+
+  try {
+    await repo.initialize();
+  } catch (error) {
+    dbIsAvailable = false;
+    dbHealthMessage =
+      "Database unavailable (primary and standby unreachable). The server is running in degraded mode.";
+    console.error("[Startup] Failed to initialize database:", error);
+  }
+
   const app = express();
   app.use(cors({ origin: corsOrigin }));
   app.use(express.json());
-  app.use("/api", buildHttpRoutes());
+  app.use(
+    "/api",
+    buildHttpRoutes({
+      healthProvider: () =>
+        dbIsAvailable
+          ? { status: "ok" }
+          : { status: "degraded", message: dbHealthMessage },
+    })
+  );
 
   const httpServer = createServer(app);
   const io = new SocketIOServer(httpServer, {
@@ -42,10 +64,6 @@ export async function createAppServer(config?: Partial<ServerConfig>): Promise<A
       methods: ["GET", "POST"],
     },
   });
-
-  const dbConnectionManager = new DatabaseConnectionManager();
-  const repo = new BubbleRepositoryPostgres(dbConnectionManager);
-  await repo.initialize();
 
   const broadcaster = new SocketIoBroadcaster(io);
 
