@@ -90,3 +90,7 @@ logs/
 
 # Config backups (created by sed -i.bak)
 *.bak
+
+# Ansible
+deploy/ansible/smoke-vars.yml
+deploy/ansible/inventory.ini

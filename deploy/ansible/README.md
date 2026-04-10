@@ -6,6 +6,7 @@ This playbook provisions a Debian/Ubuntu VM so BubbleShot can run in a productio
 - Nginx reverse proxy
 - WireGuard client configuration (`wg-quick@wg0`)
 - Repository clone to `/opt/bubbleshot`
+- Repository checkout to `/opt/bubbleshot/repo`
 - Backend build + systemd service
 - Frontend build served by Nginx from `/var/www/bubbleshot`
 - Health checks (`/healthz` and `/api/health`)

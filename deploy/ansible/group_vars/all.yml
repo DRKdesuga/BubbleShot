@@ -5,8 +5,9 @@ bubbleshot_repo_version: "main"
 
 # Runtime layout
 bubbleshot_app_dir: "/opt/bubbleshot"
-bubbleshot_backend_dir: "{{ bubbleshot_app_dir }}/backend"
-bubbleshot_frontend_dir: "{{ bubbleshot_app_dir }}/frontend"
+bubbleshot_repo_checkout_dir: "{{ bubbleshot_app_dir }}/repo"
+bubbleshot_backend_dir: "{{ bubbleshot_repo_checkout_dir }}/backend"
+bubbleshot_frontend_dir: "{{ bubbleshot_repo_checkout_dir }}/frontend"
 bubbleshot_web_root: "/var/www/bubbleshot"
 bubbleshot_env_file: "/etc/bubbleshot/.env"
 bubbleshot_service_name: "bubbleshot-backend"

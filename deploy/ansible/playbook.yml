@@ -51,8 +51,8 @@
           - bubbleshot_wg_peers | length > 0
           - bubbleshot_wg_peers | selectattr('public_key', 'defined') | list | length == bubbleshot_wg_peers | length
           - bubbleshot_wg_peers | selectattr('endpoint', 'defined') | list | length == bubbleshot_wg_peers | length
+        fail_msg: "Set real WireGuard keys/endpoints in group_vars/all.yml before running the playbook."
       when: bubbleshot_wireguard_enabled
-      fail_msg: "Set real WireGuard keys/endpoints in group_vars/all.yml before running the playbook."
 
     - name: Install base packages
       ansible.builtin.apt:
@@ -111,6 +111,7 @@
         mode: "{{ item.mode }}"
       loop:
         - { path: "{{ bubbleshot_app_dir }}", mode: "0755" }
+        - { path: "{{ bubbleshot_repo_checkout_dir }}", mode: "0755" }
         - { path: "{{ bubbleshot_web_root }}", owner: "www-data", group: "www-data", mode: "0755" }
         - { path: "/etc/bubbleshot", mode: "0750" }
         - { path: "/etc/wireguard", mode: "0700" }
@@ -130,7 +131,7 @@
     - name: Clone BubbleShot repository
       ansible.builtin.git:
         repo: "{{ bubbleshot_repo_url }}"
-        dest: "{{ bubbleshot_app_dir }}"
+        dest: "{{ bubbleshot_repo_checkout_dir }}"
         version: "{{ bubbleshot_repo_version }}"
         update: true
         force: true
