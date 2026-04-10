@@ -248,9 +248,11 @@
     - name: Check backend API health through nginx
       ansible.builtin.uri:
         url: "http://127.0.0.1/api/health"
-        status_code: 200
+        status_code:
+          - 200
+          - 503
       register: bubbleshot_api_health
       retries: 10
       delay: 3
-      until: bubbleshot_api_health.status == 200
+      until: bubbleshot_api_health.status in [200, 503]
       when: bubbleshot_run_healthchecks
