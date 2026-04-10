@@ -1,0 +1,60 @@
+---
+# Repository
+bubbleshot_repo_url: "https://github.com/your-org/BubbleShot.git"
+bubbleshot_repo_version: "main"
+
+# Runtime layout
+bubbleshot_app_dir: "/opt/bubbleshot"
+bubbleshot_backend_dir: "{{ bubbleshot_app_dir }}/backend"
+bubbleshot_frontend_dir: "{{ bubbleshot_app_dir }}/frontend"
+bubbleshot_web_root: "/var/www/bubbleshot"
+bubbleshot_env_file: "/etc/bubbleshot/.env"
+bubbleshot_service_name: "bubbleshot-backend"
+
+# Node runtime
+bubbleshot_node_major: "22"
+
+# Nginx
+bubbleshot_server_name: "_"
+bubbleshot_nginx_conf_path: "/etc/nginx/sites-available/bubbleshot.conf"
+bubbleshot_nginx_site_link: "/etc/nginx/sites-enabled/bubbleshot.conf"
+
+# Backend app env
+bubbleshot_instance_id: "inst-2"
+bubbleshot_backend_host: "127.0.0.1"
+bubbleshot_backend_port: 3000
+bubbleshot_cors_origin: "*"
+
+# Database connectivity (set to your WireGuard/private DB endpoints in real deploy)
+bubbleshot_db_host_primary: "10.60.0.20"
+bubbleshot_db_host_standby: "10.61.0.20"
+bubbleshot_db_port_primary: 5432
+bubbleshot_db_port_standby: 5432
+bubbleshot_db_name: "bubbleshot_inst_2"
+bubbleshot_db_user: "bubbleshot"
+bubbleshot_db_password: "secret"
+
+# WireGuard (app VM client config)
+bubbleshot_wireguard_enabled: true
+bubbleshot_wg_interface: "wg0"
+bubbleshot_wg_private_key: "REPLACE_WITH_APP_VM_PRIVATE_KEY"
+bubbleshot_wg_address: "10.50.0.2/32"
+bubbleshot_wg_dns: ""
+bubbleshot_wg_peers:
+  - name: "site-a"
+    public_key: "REPLACE_WITH_SITE_A_PUBLIC_KEY"
+    endpoint: "SITE_A_PUBLIC_IP:51820"
+    allowed_ips:
+      - "10.60.0.0/24"
+      - "10.50.0.1/32"
+    persistent_keepalive: 25
+  - name: "site-b"
+    public_key: "REPLACE_WITH_SITE_B_PUBLIC_KEY"
+    endpoint: "SITE_B_PUBLIC_IP:51820"
+    allowed_ips:
+      - "10.61.0.0/24"
+      - "10.50.0.3/32"
+    persistent_keepalive: 25
+
+# Post-deploy checks
+bubbleshot_run_healthchecks: true

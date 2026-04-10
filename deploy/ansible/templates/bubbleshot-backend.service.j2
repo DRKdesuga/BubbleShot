@@ -1,0 +1,22 @@
+[Unit]
+Description=BubbleShot backend (Express + Socket.IO)
+{% if bubbleshot_wireguard_enabled %}
+After=network-online.target wg-quick@{{ bubbleshot_wg_interface }}.service
+Wants=network-online.target wg-quick@{{ bubbleshot_wg_interface }}.service
+{% else %}
+After=network-online.target
+Wants=network-online.target
+{% endif %}
+
+[Service]
+Type=simple
+User=www-data
+WorkingDirectory={{ bubbleshot_backend_dir }}
+EnvironmentFile={{ bubbleshot_env_file }}
+# Support both dist/main.js and dist/src/main.js outputs.
+ExecStart=/bin/bash -lc 'if [ -f dist/main.js ]; then exec /usr/bin/node dist/main.js; elif [ -f dist/src/main.js ]; then exec /usr/bin/node dist/src/main.js; else echo "Missing backend build entrypoint in dist/" >&2; exit 1; fi'
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

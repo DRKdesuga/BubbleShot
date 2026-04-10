@@ -1,0 +1,255 @@
+---
+- name: Provision BubbleShot application VM
+  hosts: bubbleshot_app
+  become: true
+  gather_facts: true
+
+  handlers:
+    - name: Reload systemd
+      ansible.builtin.systemd:
+        daemon_reload: true
+
+    - name: Restart wireguard
+      ansible.builtin.systemd:
+        name: "wg-quick@{{ bubbleshot_wg_interface }}"
+        state: restarted
+        enabled: true
+
+    - name: Restart backend
+      ansible.builtin.systemd:
+        name: "{{ bubbleshot_service_name }}"
+        state: restarted
+        enabled: true
+
+    - name: Restart nginx
+      ansible.builtin.systemd:
+        name: nginx
+        state: restarted
+        enabled: true
+
+  tasks:
+    - name: Assert supported OS family
+      ansible.builtin.assert:
+        that:
+          - ansible_os_family == "Debian"
+        fail_msg: "This playbook currently supports Debian/Ubuntu VMs."
+
+    - name: Assert repository URL is configured
+      ansible.builtin.assert:
+        that:
+          - bubbleshot_repo_url is string
+          - bubbleshot_repo_url | length > 0
+          - "'your-org/BubbleShot.git' not in bubbleshot_repo_url"
+        fail_msg: "Set bubbleshot_repo_url to your real repository URL in group_vars/all.yml."
+
+    - name: Assert WireGuard variables are configured
+      ansible.builtin.assert:
+        that:
+          - bubbleshot_wg_private_key is string
+          - bubbleshot_wg_private_key | length > 0
+          - "'REPLACE_WITH_APP_VM_PRIVATE_KEY' not in bubbleshot_wg_private_key"
+          - bubbleshot_wg_peers | length > 0
+          - bubbleshot_wg_peers | selectattr('public_key', 'defined') | list | length == bubbleshot_wg_peers | length
+          - bubbleshot_wg_peers | selectattr('endpoint', 'defined') | list | length == bubbleshot_wg_peers | length
+      when: bubbleshot_wireguard_enabled
+      fail_msg: "Set real WireGuard keys/endpoints in group_vars/all.yml before running the playbook."
+
+    - name: Install base packages
+      ansible.builtin.apt:
+        name:
+          - ca-certificates
+          - curl
+          - git
+          - gnupg
+          - nginx
+          - rsync
+          - build-essential
+        update_cache: true
+        state: present
+
+    - name: Install WireGuard
+      ansible.builtin.apt:
+        name: wireguard
+        state: present
+
+    - name: Ensure apt keyrings directory exists
+      ansible.builtin.file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: "0755"
+
+    - name: Download NodeSource signing key
+      ansible.builtin.get_url:
+        url: https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key
+        dest: /tmp/nodesource-repo.gpg.key
+        mode: "0644"
+
+    - name: Install NodeSource key into apt keyring
+      ansible.builtin.command: >
+        gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg /tmp/nodesource-repo.gpg.key
+      args:
+        creates: /etc/apt/keyrings/nodesource.gpg
+
+    - name: Add NodeSource apt repository
+      ansible.builtin.apt_repository:
+        repo: "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_{{ bubbleshot_node_major }}.x nodistro main"
+        filename: nodesource
+        state: present
+
+    - name: Install Node.js
+      ansible.builtin.apt:
+        name: nodejs
+        update_cache: true
+        state: present
+
+    - name: Ensure BubbleShot directories exist
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: directory
+        owner: "{{ item.owner | default('root') }}"
+        group: "{{ item.group | default('root') }}"
+        mode: "{{ item.mode }}"
+      loop:
+        - { path: "{{ bubbleshot_app_dir }}", mode: "0755" }
+        - { path: "{{ bubbleshot_web_root }}", owner: "www-data", group: "www-data", mode: "0755" }
+        - { path: "/etc/bubbleshot", mode: "0750" }
+        - { path: "/etc/wireguard", mode: "0700" }
+
+    - name: Deploy WireGuard configuration
+      ansible.builtin.template:
+        src: templates/wg0.conf.j2
+        dest: "/etc/wireguard/{{ bubbleshot_wg_interface }}.conf"
+        owner: root
+        group: root
+        mode: "0600"
+      when: bubbleshot_wireguard_enabled
+      notify:
+        - Restart wireguard
+        - Restart backend
+
+    - name: Clone BubbleShot repository
+      ansible.builtin.git:
+        repo: "{{ bubbleshot_repo_url }}"
+        dest: "{{ bubbleshot_app_dir }}"
+        version: "{{ bubbleshot_repo_version }}"
+        update: true
+        force: true
+      notify:
+        - Restart backend
+        - Restart nginx
+
+    - name: Install backend dependencies
+      ansible.builtin.command: npm ci
+      args:
+        chdir: "{{ bubbleshot_backend_dir }}"
+
+    - name: Install frontend dependencies
+      ansible.builtin.command: npm ci
+      args:
+        chdir: "{{ bubbleshot_frontend_dir }}"
+
+    - name: Build backend
+      ansible.builtin.command: npm run build
+      args:
+        chdir: "{{ bubbleshot_backend_dir }}"
+      notify: Restart backend
+
+    - name: Build frontend
+      ansible.builtin.command: npm run build
+      args:
+        chdir: "{{ bubbleshot_frontend_dir }}"
+
+    - name: Deploy frontend build into nginx web root
+      ansible.builtin.command: >
+        rsync -a --delete {{ bubbleshot_frontend_dir }}/dist/ {{ bubbleshot_web_root }}/
+      notify: Restart nginx
+
+    - name: Write backend environment file
+      ansible.builtin.template:
+        src: templates/bubbleshot.env.j2
+        dest: "{{ bubbleshot_env_file }}"
+        owner: root
+        group: www-data
+        mode: "0640"
+      notify: Restart backend
+
+    - name: Install backend systemd service
+      ansible.builtin.template:
+        src: templates/bubbleshot-backend.service.j2
+        dest: "/etc/systemd/system/{{ bubbleshot_service_name }}.service"
+        owner: root
+        group: root
+        mode: "0644"
+      notify:
+        - Reload systemd
+        - Restart backend
+
+    - name: Install nginx site config
+      ansible.builtin.template:
+        src: templates/bubbleshot-nginx.conf.j2
+        dest: "{{ bubbleshot_nginx_conf_path }}"
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart nginx
+
+    - name: Enable BubbleShot nginx site
+      ansible.builtin.file:
+        src: "{{ bubbleshot_nginx_conf_path }}"
+        dest: "{{ bubbleshot_nginx_site_link }}"
+        state: link
+      notify: Restart nginx
+
+    - name: Disable default nginx site when present
+      ansible.builtin.file:
+        path: /etc/nginx/sites-enabled/default
+        state: absent
+      notify: Restart nginx
+
+    - name: Flush handlers before checks
+      ansible.builtin.meta: flush_handlers
+
+    - name: Ensure WireGuard service is enabled and started
+      ansible.builtin.systemd:
+        name: "wg-quick@{{ bubbleshot_wg_interface }}"
+        state: started
+        enabled: true
+      when: bubbleshot_wireguard_enabled
+
+    - name: Validate nginx configuration
+      ansible.builtin.command: nginx -t
+      changed_when: false
+
+    - name: Ensure backend service is enabled and started
+      ansible.builtin.systemd:
+        name: "{{ bubbleshot_service_name }}"
+        state: started
+        enabled: true
+
+    - name: Ensure nginx service is enabled and started
+      ansible.builtin.systemd:
+        name: nginx
+        state: started
+        enabled: true
+
+    - name: Wait for nginx to listen on HTTP
+      ansible.builtin.wait_for:
+        host: 127.0.0.1
+        port: 80
+        timeout: 30
+
+    - name: Check LB health probe endpoint
+      ansible.builtin.uri:
+        url: http://127.0.0.1/healthz
+        status_code: 200
+      when: bubbleshot_run_healthchecks
+
+    - name: Check backend API health through nginx
+      ansible.builtin.uri:
+        url: "http://127.0.0.1/api/health"
+        status_code: 200
+      register: bubbleshot_api_health
+      retries: 10
+      delay: 3
+      until: bubbleshot_api_health.status == 200
+      when: bubbleshot_run_healthchecks

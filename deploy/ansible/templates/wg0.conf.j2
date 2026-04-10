@@ -1,0 +1,16 @@
+[Interface]
+Address = {{ bubbleshot_wg_address }}
+PrivateKey = {{ bubbleshot_wg_private_key }}
+{% if bubbleshot_wg_dns | default('') | length > 0 %}
+DNS = {{ bubbleshot_wg_dns }}
+{% endif %}
+
+{% for peer in bubbleshot_wg_peers %}
+# Peer {{ peer.name }}
+[Peer]
+PublicKey = {{ peer.public_key }}
+Endpoint = {{ peer.endpoint }}
+AllowedIPs = {{ peer.allowed_ips | join(', ') }}
+PersistentKeepalive = {{ peer.persistent_keepalive | default(25) }}
+
+{% endfor %}
