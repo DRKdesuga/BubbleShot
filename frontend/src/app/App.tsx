@@ -9,6 +9,15 @@ import logoImg from "../images/mind7_png_logo.png";
 
 // Backend URL is optionally injected via Vite for dev, otherwise we rely on relative paths (Nginx proxy)
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
+
+type DbStatus = {
+  state: "connecting" | "connected" | "reconnecting" | "error";
+  role: "primary" | "standby" | null;
+  host: string | null;
+  port: number | null;
+  message?: string;
+};
+
 function isWordEntryArray(value: unknown): value is WordEntry[] {
   if (!Array.isArray(value)) {
     return false;
@@ -25,9 +34,28 @@ function isWordEntryArray(value: unknown): value is WordEntry[] {
   );
 }
 
+function isDbStatus(value: unknown): value is DbStatus {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+
+  const candidate = value as Record<string, unknown>;
+  const state = candidate.state;
+  const role = candidate.role;
+
+  return (
+    (state === "connecting" ||
+      state === "connected" ||
+      state === "reconnecting" ||
+      state === "error") &&
+    (role === "primary" || role === "standby" || role === null)
+  );
+}
+
 export default function App() {
   const [words, setWords] = useState<WordEntry[]>([]);
   const [isConnected, setIsConnected] = useState(false);
+  const [dbStatus, setDbStatus] = useState<DbStatus | null>(null);
   const leaderboardRef = useRef<HTMLDivElement>(null);
   const socketRef = useRef<Socket | null>(null);
 
@@ -45,11 +73,24 @@ export default function App() {
 
     socket.on("disconnect", () => {
       setIsConnected(false);
+      setDbStatus({
+        state: "reconnecting",
+        role: null,
+        host: null,
+        port: null,
+        message: "Reconnecting to database...",
+      });
     });
 
     socket.on("state", (payload: unknown) => {
       if (isWordEntryArray(payload)) {
         setWords(payload);
+      }
+    });
+
+    socket.on("dbStatus", (payload: unknown) => {
+      if (isDbStatus(payload)) {
+        setDbStatus(payload);
       }
     });
 
@@ -62,6 +103,9 @@ export default function App() {
       socketRef.current = null;
     };
   }, []);
+
+  const showReconnectBanner =
+    dbStatus?.state === "reconnecting" || dbStatus?.state === "error";
 
   const handleAddWord = useCallback((word: string) => {
     if (!socketRef.current) {
@@ -133,6 +177,21 @@ export default function App() {
         <div ref={leaderboardRef} className="absolute top-4 left-4 z-40 p-0">
           <Leaderboard words={words} />
         </div>
+
+        {showReconnectBanner ? (
+          <div className="absolute top-4 left-1/2 z-50 -translate-x-1/2 px-4 py-2 rounded-full border border-red-300/40 bg-red-700/90 text-white shadow-lg backdrop-blur-sm">
+            <span
+              style={{
+                fontFamily: "'Inter', sans-serif",
+                fontSize: "0.8rem",
+                fontWeight: 700,
+                letterSpacing: "0.04em",
+              }}
+            >
+              {dbStatus?.message ?? "Reconnecting to database..."}
+            </span>
+          </div>
+        ) : null}
 
         {/* Team logo top-right */}
         <div className="absolute top-5 right-5 z-40 p-0">

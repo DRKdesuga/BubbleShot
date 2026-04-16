@@ -3,17 +3,22 @@ import { hpAfterAdd, hpAfterHit, isPopped } from "../../domain/services/bubbleRu
 import type { BubbleRepository, HitWordResult } from "./bubbleRepository.js";
 import { DatabaseConnectionManager } from "../db/connectionManager.js";
 
+const ENSURE_BUBBLES_TABLE_SQL = `
+  CREATE TABLE IF NOT EXISTS bubbles (
+    word VARCHAR(255) PRIMARY KEY,
+    hp INT NOT NULL
+  )
+`;
+
 export class BubbleRepositoryPostgres implements BubbleRepository {
-  constructor(private readonly db: DatabaseConnectionManager) {}
+  constructor(private readonly db: DatabaseConnectionManager) {
+    this.db.registerInitializer(async (pool) => {
+      await pool.query(ENSURE_BUBBLES_TABLE_SQL);
+    });
+  }
 
   async initialize(): Promise<void> {
-    // Ensuring the table schema is present on application start.
-    await this.db.query(`
-      CREATE TABLE IF NOT EXISTS bubbles (
-        word VARCHAR(255) PRIMARY KEY,
-        hp INT NOT NULL
-      )
-    `);
+    await this.db.getPool();
   }
 
   async getAll(): Promise<Bubble[]> {

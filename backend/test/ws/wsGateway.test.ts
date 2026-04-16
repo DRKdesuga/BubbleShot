@@ -3,6 +3,7 @@ import { type Server as HttpServer } from "node:http";
 import { afterEach, describe, expect, it } from "vitest";
 import { io as ioClient, type Socket as ClientSocket } from "socket.io-client";
 import { createAppServer } from "../../src/server.js";
+import { InMemoryBubbleRepository } from "../../src/infrastructure/repositories/inMemoryBubbleRepository.js";
 
 const WS_TEST_DEBUG = process.env.WS_TEST_DEBUG === "1";
 
@@ -79,7 +80,10 @@ describe("wsGateway", () => {
   });
 
   it("broadcasts state updates to all clients", async () => {
-    const { httpServer, io, repo } = await createAppServer({ corsOrigin: "*" });
+    const { httpServer, io, repo } = await createAppServer({
+      corsOrigin: "*",
+      repo: new InMemoryBubbleRepository(),
+    });
     await repo.clearAll();
 
     debug("starting HTTP server");
@@ -93,11 +97,6 @@ describe("wsGateway", () => {
       const [a, b] = await Promise.all([connectClient(url), connectClient(url)]);
       clients.push(a, b);
       debug("both clients connected");
-
-      await Promise.all([
-        waitForEvent(a, "state"),
-        waitForEvent(b, "state"),
-      ]);
 
       const bStatePromise = waitForEvent<Array<{ word: string; hp: number }>>(b, "state");
       const ack = await new Promise<{ ok: boolean }>((resolve) => {
