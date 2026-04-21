@@ -7,7 +7,10 @@ import { AddWordUseCase } from "./application/usecases/addWord.js";
 import { GetLeaderboardUseCase } from "./application/usecases/getLeaderboard.js";
 import { HitWordUseCase } from "./application/usecases/hitWord.js";
 import { SocketIoBroadcaster } from "./infrastructure/realtime/socketIoBroadcaster.js";
-import { DatabaseConnectionManager } from "./infrastructure/db/connectionManager.js";
+import {
+  DatabaseConnectionManager,
+  type DatabaseStatus,
+} from "./infrastructure/db/connectionManager.js";
 import { BubbleRepositoryPostgres } from "./infrastructure/repositories/bubbleRepositoryPostgres.js";
 import { buildHttpRoutes } from "./presentation/http/routes.js";
 import { registerWsGateway } from "./presentation/ws/wsGateway.js";
@@ -23,6 +26,8 @@ export interface AppServer {
 
 export interface ServerConfig {
   corsOrigin: string;
+  repo: BubbleRepository;
+  getDatabaseStatus: () => DatabaseStatus;
 }
 
 export async function createAppServer(config?: Partial<ServerConfig>): Promise<AppServer> {
@@ -43,9 +48,34 @@ export async function createAppServer(config?: Partial<ServerConfig>): Promise<A
     },
   });
 
-  const dbConnectionManager = new DatabaseConnectionManager();
-  const repo = new BubbleRepositoryPostgres(dbConnectionManager);
-  await repo.initialize();
+  let repo: BubbleRepository;
+  let getDatabaseStatus: () => DatabaseStatus;
+
+  if (config?.repo) {
+    repo = config.repo;
+    getDatabaseStatus =
+      config.getDatabaseStatus ??
+      (() => ({
+        state: "connected",
+        role: "primary",
+        host: null,
+        port: null,
+        message: "In-memory repository active.",
+      }));
+  } else {
+    const dbConnectionManager = new DatabaseConnectionManager();
+    dbConnectionManager.subscribe((status: DatabaseStatus) => {
+      io.emit("dbStatus", status);
+    });
+
+    const postgresRepo = new BubbleRepositoryPostgres(dbConnectionManager);
+    void postgresRepo.initialize().catch((error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(`[DB] Starting API in degraded mode. ${message}`);
+    });
+    repo = postgresRepo;
+    getDatabaseStatus = () => dbConnectionManager.getStatus();
+  }
 
   const broadcaster = new SocketIoBroadcaster(io);
 
@@ -54,6 +84,7 @@ export async function createAppServer(config?: Partial<ServerConfig>): Promise<A
     addWordUseCase: new AddWordUseCase(repo, broadcaster),
     hitWordUseCase: new HitWordUseCase(repo, broadcaster),
     getLeaderboardUseCase: new GetLeaderboardUseCase(repo),
+    getDatabaseStatus,
   });
 
   return { app, httpServer, io, repo };
