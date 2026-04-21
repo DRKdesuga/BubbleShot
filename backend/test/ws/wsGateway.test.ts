@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { io as ioClient, type Socket as ClientSocket } from "socket.io-client";
 import { createAppServer } from "../../src/server.js";
 import { InMemoryBubbleRepository } from "../../src/infrastructure/repositories/inMemoryBubbleRepository.js";
+import type { BubbleRepository } from "../../src/infrastructure/repositories/bubbleRepository.js";
 
 const WS_TEST_DEBUG = process.env.WS_TEST_DEBUG === "1";
 
@@ -123,4 +124,63 @@ describe("wsGateway", () => {
       debug("teardown completed");
     }
   }, 10000);
+
+  it("emits dbStatus on connect even when initial repository load fails", async () => {
+    const failingRepo: BubbleRepository = {
+      getAll: async () => {
+        throw new Error("database unavailable");
+      },
+      addWord: async () => {
+        throw new Error("database unavailable");
+      },
+      hitWord: async () => {
+        throw new Error("database unavailable");
+      },
+      getLeaderboard: async () => {
+        throw new Error("database unavailable");
+      },
+      clearAll: async () => {},
+    };
+
+    const { httpServer, io } = await createAppServer({
+      corsOrigin: "*",
+      repo: failingRepo,
+      getDatabaseStatus: () => ({
+        state: "reconnecting",
+        role: null,
+        host: null,
+        port: null,
+        message: "Waiting for database connection...",
+      }),
+    });
+
+    await startServer(httpServer);
+
+    try {
+      const port = (httpServer.address() as AddressInfo).port;
+      const url = `http://127.0.0.1:${port}`;
+      const client = ioClient(url, {
+        path: "/api/socket.io",
+        autoConnect: false,
+        reconnection: false,
+        transports: ["websocket"],
+      });
+      clients.push(client);
+
+      const dbStatusPromise = waitForEvent(client, "dbStatus");
+      client.connect();
+
+      await expect(dbStatusPromise).resolves.toMatchObject({
+        state: "reconnecting",
+        message: "Waiting for database connection...",
+      });
+    } finally {
+      for (const c of clients) {
+        c.disconnect();
+      }
+
+      await new Promise<void>((resolve) => io.close(() => resolve()));
+      await new Promise<void>((resolve) => httpServer.close(() => resolve()));
+    }
+  });
 });

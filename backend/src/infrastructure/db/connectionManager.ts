@@ -65,6 +65,16 @@ export class DatabaseConnectionManager {
     return role === "primary" ? "Primary" : "Standby";
   }
 
+  private setWaitingForDatabaseStatus(message: string): void {
+    this.setStatus({
+      state: "reconnecting",
+      role: null,
+      host: null,
+      port: null,
+      message,
+    });
+  }
+
   private setStatus(status: DatabaseStatus): void {
     this.status = status;
     for (const listener of this.listeners) {
@@ -140,13 +150,7 @@ export class DatabaseConnectionManager {
     void this.getPool().catch((error) => {
       const message = this.extractErrorMessage(error);
       console.error(`[DB] Background reconnection failed. Error: ${message}`);
-      this.setStatus({
-        state: "error",
-        role: null,
-        host: null,
-        port: null,
-        message: "Database unavailable.",
-      });
+      this.setWaitingForDatabaseStatus("Waiting for database connection...");
     });
   }
 
@@ -216,13 +220,7 @@ export class DatabaseConnectionManager {
       console.error(
         `[DB] Failed to connect to Standby DB as well. Error: ${this.extractErrorMessage(standbyError)}`
       );
-      this.setStatus({
-        state: "error",
-        role: null,
-        host: null,
-        port: null,
-        message: "Database connection failed for both primary and standby.",
-      });
+      this.setWaitingForDatabaseStatus("Waiting for database connection...");
       throw new Error("Database connection failed for both primary and standby.");
     }
   }

@@ -52,6 +52,8 @@ function emitError(socket: Socket, error: unknown): void {
 
 export function registerWsGateway(io: Server, deps: GatewayDeps): void {
   io.on("connection", async (socket) => {
+    socket.emit("dbStatus", deps.getDatabaseStatus());
+
     socket.on("addWord", async (payload: unknown, ack?: Ack) => {
       try {
         const word = parseWordPayload(payload);
@@ -110,9 +112,13 @@ export function registerWsGateway(io: Server, deps: GatewayDeps): void {
 
       socket.emit("state", state);
       socket.emit("leaderboard", leaderboard);
-      socket.emit("dbStatus", deps.getDatabaseStatus());
     } catch (error) {
       console.error("[WS] initial state failed:", error);
+
+      if (deps.getDatabaseStatus().state !== "connected") {
+        return;
+      }
+
       emitError(socket, error);
     }
   });

@@ -69,7 +69,10 @@ export async function createAppServer(config?: Partial<ServerConfig>): Promise<A
     });
 
     const postgresRepo = new BubbleRepositoryPostgres(dbConnectionManager);
-    await postgresRepo.initialize();
+    void postgresRepo.initialize().catch((error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(`[DB] Starting API in degraded mode. ${message}`);
+    });
     repo = postgresRepo;
     getDatabaseStatus = () => dbConnectionManager.getStatus();
   }
