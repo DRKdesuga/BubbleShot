@@ -1,4 +1,4 @@
-import { Pool, PoolConfig } from "pg";
+import { Pool, PoolConfig, type PoolClient } from "pg";
 
 export type DatabaseRole = "primary" | "standby";
 
@@ -24,6 +24,7 @@ export class DatabaseConnectionManager {
   public currentHost: string | null = null;
   private currentRole: DatabaseRole | null = null;
   private currentPort: string | null = null;
+  private fallbackActive = false;
   private connectPromise: Promise<Pool> | null = null;
   private readonly initializers: PoolInitializer[] = [];
   private readonly listeners = new Set<StatusListener>();
@@ -73,6 +74,13 @@ export class DatabaseConnectionManager {
       port: null,
       message,
     });
+  }
+
+  private activateFallbackMode(reason: string): void {
+    if (!this.fallbackActive) {
+      console.warn(`[DB] Fallback mode activated. ${reason}`);
+    }
+    this.fallbackActive = true;
   }
 
   private setStatus(status: DatabaseStatus): void {
@@ -165,6 +173,10 @@ export class DatabaseConnectionManager {
         return;
       }
 
+      if (target.role === "primary") {
+        console.warn(`[DB] Primary database is down. Error: ${message}`);
+        this.activateFallbackMode("Reads and writes will use Standby DB only.");
+      }
       this.invalidateActivePool("Reconnecting to standby database...");
       this.triggerBackgroundReconnect();
     });
@@ -192,8 +204,13 @@ export class DatabaseConnectionManager {
         message:
           target.role === "primary"
             ? "Connected to primary database."
-            : "Connected to standby database.",
+            : this.fallbackActive
+              ? "Fallback mode active. Connected to standby database."
+              : "Connected to standby database.",
       });
+      if (target.role === "primary") {
+        console.log("[DB] Primary database is healthy.");
+      }
       console.log(`[DB] Successfully connected to ${label} DB.`);
       return pool;
     } catch (error) {
@@ -205,17 +222,30 @@ export class DatabaseConnectionManager {
   private async establishPool(): Promise<Pool> {
     const { primary, standby } = this.getTargets();
 
-    try {
-      return await this.connectToTarget(primary);
-    } catch (error) {
-      console.warn(
-        `[DB] Failed to connect to Primary DB. Error: ${this.extractErrorMessage(error)}`
-      );
-      console.log(`[DB] Falling back to Standby DB at ${standby.host}:${standby.port}...`);
+    if (!this.fallbackActive) {
+      try {
+        return await this.connectToTarget(primary);
+      } catch (error) {
+        console.warn(
+          `[DB] Primary database is down. Error: ${this.extractErrorMessage(error)}`
+        );
+        console.log(`[DB] Falling back to Standby DB at ${standby.host}:${standby.port}...`);
+      }
+    } else {
+      console.log("[DB] Fallback mode active. Skipping Primary DB connection attempt.");
     }
 
     try {
-      return await this.connectToTarget(standby);
+      const standbyPool = await this.connectToTarget(standby);
+      this.activateFallbackMode("Reads and writes will use Standby DB only.");
+      this.setStatus({
+        state: "connected",
+        role: standby.role,
+        host: standby.host,
+        port: Number(standby.port),
+        message: "Fallback mode active. Connected to standby database.",
+      });
+      return standbyPool;
     } catch (standbyError) {
       console.error(
         `[DB] Failed to connect to Standby DB as well. Error: ${this.extractErrorMessage(standbyError)}`
@@ -255,6 +285,12 @@ export class DatabaseConnectionManager {
       return await activePool.query(text, params);
     } catch (error) {
       if (this.isErrorConnectionLost(error)) {
+        if (this.currentRole === "primary") {
+          console.warn(
+            `[DB] Primary database is down. Error: ${this.extractErrorMessage(error)}`
+          );
+          this.activateFallbackMode("Reads and writes will use Standby DB only.");
+        }
         console.warn(
           "[DB] Connection lost. Unsetting active pool to trigger failover connection search."
         );
@@ -270,13 +306,52 @@ export class DatabaseConnectionManager {
     }
   }
 
+  public async writeQuery(text: string, params?: any[]) {
+    const activePool = await this.getPool();
+    const shouldDoubleWrite = this.currentRole === "primary" && !this.fallbackActive;
+
+    if (shouldDoubleWrite) {
+      console.log("[DB] Attempting double write on Primary and Standby DB.");
+    }
+
+    try {
+      const result = await activePool.query(text, params);
+
+      if (shouldDoubleWrite) {
+        await this.writeToStandbyBestEffort((pool) => pool.query(text, params));
+      }
+
+      return result;
+    } catch (error) {
+      if (this.isErrorConnectionLost(error) && this.currentRole === "primary") {
+        console.warn(
+          `[DB] Primary database is down. Error: ${this.extractErrorMessage(error)}`
+        );
+        this.activateFallbackMode("Reads and writes will use Standby DB only.");
+        this.invalidateActivePool("Reconnecting to standby database...");
+        console.log("[DB] Retrying write on Standby DB only.");
+        const nextPool = await this.getPool();
+        return await nextPool.query(text, params);
+      }
+
+      console.error(`[DB] Write query failed. Error: ${this.extractErrorMessage(error)}`);
+      throw error;
+    }
+  }
+
   public async transaction<T>(
-    callback: (client: import("pg").PoolClient) => Promise<T>
+    callback: (client: PoolClient) => Promise<T>
   ): Promise<T> {
     try {
       return await this._runTransaction(callback);
     } catch (error) {
       if (this.isErrorConnectionLost(error)) {
+        if (this.currentRole === "primary") {
+          console.warn(
+            `[DB] Primary database is down. Error: ${this.extractErrorMessage(error)}`
+          );
+          this.activateFallbackMode("Reads and writes will use Standby DB only.");
+        }
         console.warn(
           "[DB] Connection lost during transaction. Unsetting active pool to trigger failover connection search."
         );
@@ -291,10 +366,100 @@ export class DatabaseConnectionManager {
     }
   }
 
+  public async writeTransaction<T>(
+    callback: (client: PoolClient) => Promise<T>
+  ): Promise<T> {
+    await this.getPool();
+    const shouldDoubleWrite = this.currentRole === "primary" && !this.fallbackActive;
+
+    if (shouldDoubleWrite) {
+      console.log("[DB] Attempting double write transaction on Primary and Standby DB.");
+    }
+
+    try {
+      const result = await this._runTransaction(callback);
+
+      if (shouldDoubleWrite) {
+        await this.writeTransactionToStandbyBestEffort(callback);
+      }
+
+      return result;
+    } catch (error) {
+      if (this.isErrorConnectionLost(error) && this.currentRole === "primary") {
+        console.warn(
+          `[DB] Primary database is down. Error: ${this.extractErrorMessage(error)}`
+        );
+        this.activateFallbackMode("Reads and writes will use Standby DB only.");
+        this.invalidateActivePool("Reconnecting to standby database...");
+        console.log("[DB] Retrying transaction on Standby DB only.");
+        return await this._runTransaction(callback);
+      }
+
+      console.error(`[DB] Write transaction failed. Error: ${this.extractErrorMessage(error)}`);
+      throw error;
+    }
+  }
+
   private async _runTransaction<T>(
-    callback: (client: import("pg").PoolClient) => Promise<T>
+    callback: (client: PoolClient) => Promise<T>
   ): Promise<T> {
     const pool = await this.getPool();
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const result = await callback(client);
+      await client.query("COMMIT");
+      return result;
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => {});
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  private async writeToStandbyBestEffort<T>(
+    operation: (pool: Pool) => Promise<T>
+  ): Promise<void> {
+    const { standby } = this.getTargets();
+    const pool = new Pool(this.createPoolConfig(standby.host, standby.port));
+
+    try {
+      await pool.query("SELECT 1");
+      await this.runInitializers(pool);
+      await operation(pool);
+    } catch (error) {
+      console.warn(
+        `[DB] Standby write failed during double write. Continuing with Primary result. Error: ${this.extractErrorMessage(error)}`
+      );
+    } finally {
+      await pool.end().catch(() => {});
+    }
+  }
+
+  private async writeTransactionToStandbyBestEffort<T>(
+    callback: (client: PoolClient) => Promise<T>
+  ): Promise<void> {
+    const { standby } = this.getTargets();
+    const pool = new Pool(this.createPoolConfig(standby.host, standby.port));
+
+    try {
+      await pool.query("SELECT 1");
+      await this.runInitializers(pool);
+      await this.runTransactionOnPool(pool, callback);
+    } catch (error) {
+      console.warn(
+        `[DB] Standby transaction failed during double write. Continuing with Primary result. Error: ${this.extractErrorMessage(error)}`
+      );
+    } finally {
+      await pool.end().catch(() => {});
+    }
+  }
+
+  private async runTransactionOnPool<T>(
+    pool: Pool,
+    callback: (client: PoolClient) => Promise<T>
+  ): Promise<T> {
     const client = await pool.connect();
     try {
       await client.query("BEGIN");

@@ -35,7 +35,7 @@ export class BubbleRepositoryPostgres implements BubbleRepository {
     
     const nextHp = hpAfterAdd(existingHp);
 
-    await this.db.query(`
+    await this.db.writeQuery(`
       INSERT INTO bubbles (word, hp) 
       VALUES ($1, $2) 
       ON CONFLICT (word) DO UPDATE SET hp = EXCLUDED.hp
@@ -45,7 +45,7 @@ export class BubbleRepositoryPostgres implements BubbleRepository {
   }
 
   async hitWord(word: string): Promise<HitWordResult> {
-    return this.db.transaction(async (client) => {
+    return this.db.writeTransaction(async (client) => {
       const res = await client.query(`SELECT hp FROM bubbles WHERE word = $1 FOR UPDATE`, [word]);
       if (res.rows.length === 0) {
         return { popped: false, bubble: null };
@@ -74,6 +74,6 @@ export class BubbleRepositoryPostgres implements BubbleRepository {
   }
 
   async clearAll(): Promise<void> {
-    await this.db.query(`DELETE FROM bubbles`);
+    await this.db.writeQuery(`DELETE FROM bubbles`);
   }
 }
